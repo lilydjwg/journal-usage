@@ -1,42 +1,46 @@
 use std::collections::HashMap;
 use systemd::journal;
 
-fn next_message(j: &mut journal::Journal) -> systemd::Result<Option<journal::JournalRecord>> {
-  loop {
-    match j.next_record() {
-      Err(e) if e.raw_os_error() == Some(74) => continue,
-      r => return r,
-    }
-  }
-}
-
 fn main() -> systemd::Result<()> {
   let mut j = journal::Journal::open(
     journal::JournalFiles::All,
     false, true)?;
   let mut m = HashMap::new();
 
-  while let Some(mut r) = next_message(&mut j)? {
-    let mut service = match r.remove("_SYSTEMD_USER_UNIT") {
-      Some(u) if !u.starts_with("run-") => u,
-      _ => r.remove("_SYSTEMD_UNIT").unwrap_or_else(
-        ||r.remove("_TRANSPORT").unwrap()),
+  loop {
+    let mut service = String::new();
+    let mut size = 0;
+    match j.next_record_raw(|r| {
+      size += r.len();
+
+      if r.starts_with(b"_SYSTEMD_USER_UNIT=") &&
+        !r.starts_with(b"_SYSTEMD_USER_UNIT=run-") {
+          service.clear();
+          let value = r.split(|c| *c == b'=').nth(1).unwrap();
+          service.push_str(String::from_utf8_lossy(value).as_ref());
+      } else if r.starts_with(b"_SYSTEMD_UNIT=") && service.is_empty() {
+          let value = r.split(|c| *c == b'=').nth(1).unwrap();
+          service.push_str(String::from_utf8_lossy(value).as_ref());
+      }
+    }) {
+      Ok(None) => break,
+      Err(e) if e.raw_os_error() == Some(74) => continue,
+      e => e?,
     };
 
     if let Some(at) = service.find('@') {
       let dot = service.find('.').unwrap();
-      service.replace_range(at..dot, "");
+      service.replace_range((at+1)..dot, "");
     }
 
-    let amt = r.get("MESSAGE").unwrap().len();
     let c = m.entry(service).or_insert(0);
-    *c += amt;
+    *c += size;
   }
 
   let mut data: Vec<(String, usize)> = m.into_iter().collect();
   data.sort_unstable_by_key(|&(_, v)| v);
   for (k, v) in data {
-    println!("{:30} {}", k, filesize(v as isize));
+    println!("{:40} {:>9}", k, filesize(v as isize));
   }
 
   Ok(())
