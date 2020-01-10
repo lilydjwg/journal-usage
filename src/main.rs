@@ -6,9 +6,10 @@ fn main() -> systemd::Result<()> {
     journal::JournalFiles::All,
     false, true)?;
   let mut m = HashMap::new();
+  let mut service = String::new();
 
   loop {
-    let mut service = String::new();
+    service.clear();
     let mut size = 0;
     match j.next_record_raw(|r| {
       size += r.len();
@@ -33,8 +34,11 @@ fn main() -> systemd::Result<()> {
       service.replace_range((at+1)..dot, "");
     }
 
-    let c = m.entry(service).or_insert(0);
-    *c += size;
+    if let Some(c) = m.get_mut(&service) {
+      *c += size;
+    } else {
+      m.insert(service.clone(), size);
+    }
   }
 
   let mut data: Vec<(String, usize)> = m.into_iter().collect();
