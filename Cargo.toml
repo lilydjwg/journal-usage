@@ -1,14 +1,13 @@
 [package]
-name = "size-per-unit"
-version = "0.2.0"
+name = "journald-space"
+version = "0.3.0"
 authors = ["lilydjwg <lilydjwg@gmail.com>"]
-edition = "2018"
+edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies.systemd]
 version = "*"
-path = "/ldata/src/rust-systemd"
 
 [profile.release]
 lto = true

@@ -1,38 +1,44 @@
 use std::collections::HashMap;
 use systemd::journal;
 
+fn handle_one_record(
+  j: &mut journal::Journal,
+  service: &mut String,
+) -> systemd::Result<usize> {
+  let mut size = 0;
+
+  while let Some(field) = j.enumerate_data()? {
+    let r = field.data();
+    size += r.len();
+
+    if r.starts_with(b"_SYSTEMD_USER_UNIT=") && !r.starts_with(b"_SYSTEMD_USER_UNIT=run-") {
+      service.clear();
+      let value = r.split(|c| *c == b'=').nth(1).unwrap();
+      service.push_str(String::from_utf8_lossy(value).as_ref());
+    } else if r.starts_with(b"_SYSTEMD_UNIT=") && service.is_empty() {
+      let value = r.split(|c| *c == b'=').nth(1).unwrap();
+      service.push_str(String::from_utf8_lossy(value).as_ref());
+    }
+  }
+
+  if let Some(at) = service.find('@') {
+    let dot = service.find('.').unwrap();
+    service.replace_range((at+1)..dot, "");
+  }
+
+  Ok(size)
+}
+
 fn main() -> systemd::Result<()> {
-  let mut j = journal::Journal::open(
-    journal::JournalFiles::All,
-    false, true)?;
+  let mut j = journal::OpenOptions::default()
+    .local_only(true)
+    .open()?;
+
   let mut m = HashMap::new();
   let mut service = String::new();
 
-  loop {
-    service.clear();
-    let mut size = 0;
-    match j.next_record_raw(|r| {
-      size += r.len();
-
-      if r.starts_with(b"_SYSTEMD_USER_UNIT=") &&
-        !r.starts_with(b"_SYSTEMD_USER_UNIT=run-") {
-          service.clear();
-          let value = r.split(|c| *c == b'=').nth(1).unwrap();
-          service.push_str(String::from_utf8_lossy(value).as_ref());
-      } else if r.starts_with(b"_SYSTEMD_UNIT=") && service.is_empty() {
-          let value = r.split(|c| *c == b'=').nth(1).unwrap();
-          service.push_str(String::from_utf8_lossy(value).as_ref());
-      }
-    }) {
-      Ok(None) => break,
-      Err(e) if e.raw_os_error() == Some(74) => continue,
-      e => e?,
-    };
-
-    if let Some(at) = service.find('@') {
-      let dot = service.find('.').unwrap();
-      service.replace_range((at+1)..dot, "");
-    }
+  while j.next()? != 0 {
+    let size = handle_one_record(&mut j, &mut service)?;
 
     if let Some(c) = m.get_mut(&service) {
       *c += size;
