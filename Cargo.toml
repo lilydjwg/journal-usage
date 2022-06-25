@@ -1,13 +1,15 @@
 [package]
-name = "journald-space"
+name = "journal-usage"
 version = "0.3.0"
 authors = ["lilydjwg <lilydjwg@gmail.com>"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
-[dependencies.systemd]
-version = "*"
+[dependencies]
+systemd = "*"
+chrono = "*"
+terminal_size = "*"
 
 [profile.release]
 lto = true

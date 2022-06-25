@@ -1,78 +1,52 @@
 use std::collections::HashMap;
 use systemd::journal;
 
-fn handle_one_record(
-  j: &mut journal::Journal,
-  service: &mut String,
-) -> systemd::Result<usize> {
-  let mut size = 0;
-
-  while let Some(field) = j.enumerate_data()? {
-    let r = field.data();
-    size += r.len();
-
-    if r.starts_with(b"_SYSTEMD_USER_UNIT=") && !r.starts_with(b"_SYSTEMD_USER_UNIT=run-") {
-      service.clear();
-      let value = r.split(|c| *c == b'=').nth(1).unwrap();
-      service.push_str(String::from_utf8_lossy(value).as_ref());
-    } else if r.starts_with(b"_SYSTEMD_UNIT=") && service.is_empty() {
-      let value = r.split(|c| *c == b'=').nth(1).unwrap();
-      service.push_str(String::from_utf8_lossy(value).as_ref());
-    }
-  }
-
-  if let Some(at) = service.find('@') {
-    let dot = service.find('.').unwrap();
-    service.replace_range((at+1)..dot, "");
-  }
-
-  Ok(size)
-}
+mod per_unit;
+mod per_date;
+mod util;
 
 fn main() -> systemd::Result<()> {
+  let arg1 = std::env::args().nth(1);
+  let arg1: Option<&str> = arg1.as_deref();
+  match arg1 {
+    Some("unit") | None => process::<per_unit::Unit>(),
+    Some("date") => process::<per_date::Date>(),
+    _ => {
+      eprintln!("unrecognized argument.");
+      std::process::exit(1);
+    },
+  }
+}
+
+trait AggKey: Clone + Eq + std::hash::Hash {
+  fn new() -> Self;
+  fn examine_record(
+    &mut self, j: &mut journal::Journal,
+  ) -> systemd::Result<usize>;
+  fn show_result(result: &mut Vec<(Self, usize)>);
+}
+
+fn process<K: AggKey>() -> systemd::Result<()> {
   let mut j = journal::OpenOptions::default()
     .local_only(true)
     .open()?;
 
   let mut m = HashMap::new();
-  let mut service = String::new();
+  let mut key = K::new();
 
   while j.next()? != 0 {
-    let size = handle_one_record(&mut j, &mut service)?;
+    let size = key.examine_record(&mut j)?;
 
-    if let Some(c) = m.get_mut(&service) {
+    if let Some(c) = m.get_mut(&key) {
       *c += size;
     } else {
-      m.insert(service.clone(), size);
+      m.insert(key.clone(), size);
     }
   }
 
-  let mut data: Vec<(String, usize)> = m.into_iter().collect();
-  data.sort_unstable_by_key(|&(_, v)| v);
-  for (k, v) in data {
-    println!("{:40} {:>9}", k, filesize(v as isize));
-  }
+  let mut data: Vec<(K, usize)> = m.into_iter().collect();
+  K::show_result(&mut data);
 
   Ok(())
-}
-
-const UNITS: [char; 4] = ['K', 'M', 'G', 'T'];
-
-fn filesize(size: isize) -> String {
-  let mut left = size.abs() as f64;
-  let mut unit = -1;
-
-  while left > 1100. && unit < 3 {
-    left /= 1024.;
-    unit += 1;
-  }
-  if unit == -1 {
-    format!("{}B", size)
-  } else {
-    if size < 0 {
-      left = -left;
-    }
-    format!("{:.1}{}iB", left, UNITS[unit as usize])
-  }
 }
 
