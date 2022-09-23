@@ -23,7 +23,9 @@ impl super::AggKey for Unit {
         self.0.clear();
         let value = r.split(|c| *c == b'=').nth(1).unwrap();
         self.0.push_str(String::from_utf8_lossy(value).as_ref());
-      } else if r.starts_with(b"_SYSTEMD_UNIT=") && self.0.is_empty() {
+        break;
+      } else if r.starts_with(b"_SYSTEMD_UNIT=") {
+        self.0.clear();
         let value = r.split(|c| *c == b'=').nth(1).unwrap();
         self.0.push_str(String::from_utf8_lossy(value).as_ref());
       }
