@@ -15,13 +15,13 @@ impl fmt::Display for Date {
 
 impl super::AggKey for Date {
   fn new() -> Self {
-    Self(chrono::NaiveDate::from_ymd(1970, 1, 1))
+    Self(chrono::NaiveDate::from_ymd_opt(1970, 1, 1).unwrap())
   }
 
   fn examine_record(&mut self, j: &mut Journal) -> systemd::Result<usize> {
     let mut size = 0;
     let t: chrono::DateTime<chrono::Local> = j.timestamp()?.into();
-    self.0 = t.date().naive_local();
+    self.0 = t.date_naive();
     while let Some(field) = j.enumerate_data()? {
       let r = field.data();
       size += r.len();
