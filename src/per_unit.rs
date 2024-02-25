@@ -32,8 +32,8 @@ impl super::AggKey for Unit {
     }
 
     if let Some(at) = self.0.find('@') {
-      let dot = self.0.find('.').unwrap();
-      self.0.replace_range((at+1)..dot, "");
+      let dot = at + self.0[at..].find('.').unwrap();
+      self.0.replace_range(at+1..dot, "");
     }
 
     Ok(size)
